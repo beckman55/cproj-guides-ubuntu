@@ -1,49 +1,171 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-GITHUB_USER="$(gh api user --jq '.login')"
 PROJECTS_DIR="$HOME/dev/projects"
+GITHUB_USER="beckman55"
 
+# -----------------------------
+# DELETE MODE (SUPPORTS BOTH ORDERS)
+# -----------------------------
 if [[ "${1:-}" = "--delete" || "${2:-}" = "--delete" ]]; then
-  if [ "${1:-}" = "--delete" ]; then TARGET="${2:-}"; else TARGET="${1:-}"; fi
-  if [ -z "${TARGET:-}" ]; then echo "Usage: cproj --delete <project>"; exit 1; fi
+
+  # Determine project name based on argument order
+  if [ "${1:-}" = "--delete" ]; then
+    TARGET="${2:-}"
+  else
+    TARGET="${1:-}"
+  fi
+
+  if [ -z "$TARGET" ]; then
+    echo "Usage:"
+    echo "  cproj --delete <project-name>"
+    echo "  cproj <project-name> --delete"
+    exit 1
+  fi
+
   TARGET_DIR="$PROJECTS_DIR/$TARGET"
-  echo "Deleting GitHub repo $GITHUB_USER/$TARGET and $TARGET_DIR"
-  gh repo delete "$GITHUB_USER/$TARGET" --yes || true
-  rm -rf "$TARGET_DIR" || true
+
+  echo "You are about to delete:"
+  echo "  GitHub repo: $GITHUB_USER/$TARGET"
+  echo "  Local folder: $TARGET_DIR"
+  echo ""
+  read -p "Are you sure you want to continue? (y/N) " CONFIRM
+
+  if [[ "$CONFIRM" != "y" && "$CONFIRM" != "Y" ]]; then
+    echo "Deletion cancelled."
+    exit 0
+  fi
+
+  echo "Deleting GitHub repo..."
+  if command -v gh >/dev/null 2>&1; then
+    gh repo delete "$GITHUB_USER/$TARGET" --yes || echo "GitHub repo not found."
+  else
+    echo "GitHub CLI (gh) not found — skipping remote repo deletion."
+  fi
+
+  echo "Deleting local folder..."
+  if [ -d "$TARGET_DIR" ]; then
+    rm -rf "$TARGET_DIR"
+    echo "Local folder deleted."
+  else
+    echo "Local folder not found."
+  fi
+
+  echo "Done."
   exit 0
 fi
 
-if [ $# -lt 1 ]; then echo "Usage: cproj <project>"; exit 1; fi
+# -----------------------------
+# ARGUMENT VALIDATION
+# -----------------------------
+if [ $# -lt 1 ]; then
+  echo "Usage:"
+  echo "  cproj <project-name> [--research|--type research]"
+  echo "  cproj <project-name> --delete"
+  echo "  cproj --delete <project-name>"
+  exit 1
+fi
+
+# -----------------------------
+# PARSE ARGUMENTS
+# -----------------------------
 TARGET="$1"
+shift  # Remove first argument (project name)
+EXTRA_ARGS="$@"  # Capture remaining arguments
 TARGET_DIR="$PROJECTS_DIR/$TARGET"
 
+# -----------------------------
+# AUTO-CREATE OR AUTO-CLONE PROJECT
+# -----------------------------
 if [ ! -d "$TARGET_DIR" ]; then
-  if gh repo view "$GITHUB_USER/$TARGET" >/dev/null 2>&1; then
+  echo "Local project '$TARGET' not found. Checking GitHub..."
+
+  if command -v gh >/dev/null 2>&1 && gh repo view "$GITHUB_USER/$TARGET" >/dev/null 2>&1; then
+    echo "GitHub repo exists. Cloning..."
     gh repo clone "$GITHUB_USER/$TARGET" "$TARGET_DIR"
   else
-    newproj "$TARGET"
+    echo "GitHub repo does not exist. Creating with newproj..."
+    newproj "$TARGET" $EXTRA_ARGS
   fi
+fi
+
+# Verify creation/clone
+if [ ! -d "$TARGET_DIR" ]; then
+  echo "Error: Project '$TARGET' still does not exist after clone/create."
+  exit 1
 fi
 
 cd "$TARGET_DIR"
 
-if [ -d ".git" ]; then
-  git fetch --quiet || true
-  if git diff --quiet && git diff --cached --quiet; then
+# -----------------------------
+# SMART GIT SYNC
+# -----------------------------
+if [ -d "$TARGET_DIR/.git" ]; then
+  echo "Checking git status..."
+
+  # Fetch latest remote info
+  git fetch --quiet || echo "Warning: git fetch failed."
+
+  # Detect uncommitted changes (staged or unstaged)
+  if ! git diff --quiet || ! git diff --cached --quiet; then
+    echo "Local repo has uncommitted changes — skipping auto-pull."
+  else
     STATUS=$(git status -uno || true)
-    if echo "$STATUS" | grep -q "behind"; then git pull --ff-only || true; fi
+
+    if echo "$STATUS" | grep -q "behind"; then
+      echo "Local repo is behind — pulling latest changes..."
+      git pull --ff-only || echo "Warning: git pull failed (non-fast-forward or other issue)."
+    else
+      echo "Local repo is up to date."
+    fi
   fi
+else
+  echo "Warning: '$TARGET_DIR' is not a git repository — skipping git sync."
 fi
 
+# -----------------------------
+# SMART VS CODE OPEN LOGIC
+# -----------------------------
 if command -v code >/dev/null 2>&1; then
-  if pgrep -x "code" >/dev/null 2>&1; then code --reuse-window "$TARGET_DIR"; else code "$TARGET_DIR"; fi
+  if pgrep -x "code" >/dev/null 2>&1; then
+    echo "VS Code is running — opening project in existing window..."
+    code --reuse-window "$TARGET_DIR"
+  else
+    echo "VS Code not running — opening new window..."
+    code "$TARGET_DIR"
+  fi
+else
+  echo "VS Code (code) command not found — skipping editor open."
 fi
 
-if command -v pre-commit >/dev/null 2>&1 && [ -f ".pre-commit-config.yaml" ]; then
-  pre-commit run --all-files || true
+# -----------------------------
+# AUTO-RUN PRE-COMMIT
+# -----------------------------
+if command -v pre-commit >/dev/null 2>&1; then
+  if [ -f ".pre-commit-config.yaml" ]; then
+    echo "Running pre-commit checks..."
+    pre-commit run --all-files || true
+  else
+    echo "No .pre-commit-config.yaml found — skipping pre-commit."
+  fi
+else
+  echo "pre-commit not found — skipping pre-commit checks."
 fi
 
-gh repo view "$GITHUB_USER/$TARGET" --web || true
+# -----------------------------
+# OPEN GITHUB REPO IN BROWSER
+# -----------------------------
+if command -v gh >/dev/null 2>&1; then
+  gh repo view "$GITHUB_USER/$TARGET" --web || echo "Unable to open GitHub repo in browser."
+else
+  echo "GitHub CLI (gh) not found — cannot open repo in browser."
+fi
 
-if command -v claude >/dev/null 2>&1; then claude "$TARGET_DIR"; fi
+# -----------------------------
+# LAUNCH CLAUDE
+# -----------------------------
+if command -v claude >/dev/null 2>&1; then
+  claude "$TARGET_DIR"
+else
+  echo "claude command not found — skipping Claude launch."
+fi

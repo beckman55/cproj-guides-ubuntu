@@ -1,36 +1,335 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-GITHUB_USER="$(gh api user --jq '.login')"
+# -----------------------------
+# CONFIGURATION
+# -----------------------------
+GITHUB_USER="beckman55"
 PROJECTS_DIR="$HOME/dev/projects"
 
+# -----------------------------
+# INPUT VALIDATION & ARGUMENT PARSING
+# -----------------------------
 if [ $# -lt 1 ]; then
-  echo "Usage: newproj <project-name>"
+  echo "Usage: newproj <project-name> [--research|--type research]"
+  echo "       newproj --delete <project-name>"
   exit 1
 fi
 
-TARGET="$1"
-TARGET_DIR="$PROJECTS_DIR/$TARGET"
+# -----------------------------
+# DELETE MODE
+# -----------------------------
+if [ "$1" = "--delete" ]; then
+  if [ $# -lt 2 ]; then
+    echo "Usage: newproj --delete <project-name>"
+    exit 1
+  fi
 
-mkdir -p "$TARGET_DIR"
-cd "$TARGET_DIR"
+  DELETE_NAME="$2"
+  DELETE_DIR="$PROJECTS_DIR/$DELETE_NAME"
 
-if [ ! -d ".git" ]; then
-  git init
+  echo "You are about to delete:"
+  echo "  GitHub repo: $GITHUB_USER/$DELETE_NAME"
+  echo "  Local folder: $DELETE_DIR"
+  echo ""
+  read -p "Are you sure you want to continue? (y/N) " CONFIRM
+
+  if [[ "$CONFIRM" != "y" && "$CONFIRM" != "Y" ]]; then
+    echo "Deletion cancelled."
+    exit 0
+  fi
+
+  echo "Deleting GitHub repo..."
+  gh repo delete "$GITHUB_USER/$DELETE_NAME" --yes || echo "GitHub repo not found or already deleted."
+
+  echo "Deleting local folder..."
+  rm -rf "$DELETE_DIR" || echo "Local folder not found."
+
+  echo "Done."
+  exit 0
 fi
 
-if [ ! -f "README.md" ]; then
-  echo "# $TARGET" > README.md
-  git add README.md
-  git commit -m "Initial commit" || true
+# -----------------------------
+# PARSE PROJECT TYPE
+# -----------------------------
+PROJECT_TYPE="default"
+PROJECT_NAME=""
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --research)
+      PROJECT_TYPE="research"
+      shift
+      ;;
+    --type)
+      if [ $# -lt 2 ]; then
+        echo "Error: --type requires an argument"
+        exit 1
+      fi
+      PROJECT_TYPE="$2"
+      shift 2
+      ;;
+    --type=*)
+      PROJECT_TYPE="${1#*=}"
+      shift
+      ;;
+    *)
+      if [ -z "$PROJECT_NAME" ]; then
+        PROJECT_NAME="$1"
+      fi
+      shift
+      ;;
+  esac
+done
+
+if [ -z "$PROJECT_NAME" ]; then
+  echo "Error: Project name is required"
+  echo "Usage: newproj <project-name> [--research|--type research]"
+  exit 1
 fi
 
-if ! gh repo view "$GITHUB_USER/$TARGET" >/dev/null 2>&1; then
-  echo "Creating GitHub repo $GITHUB_USER/$TARGET..."
-  gh repo create "$GITHUB_USER/$TARGET" --source=. --public --push
+PROJECT_DIR="$PROJECTS_DIR/$PROJECT_NAME"
+
+# -----------------------------
+# CREATE DEFAULT PROJECT FUNCTION
+# -----------------------------
+create_default_project() {
+  cat << 'EOF' > README.md
+# New Project
+
+This project was generated automatically using the newproj tool.
+EOF
+
+  cat << 'EOF' > LICENSE
+MIT License
+EOF
+
+  cat << 'EOF' > CHANGELOG.md
+# Changelog
+All notable changes to this project will be documented here.
+EOF
+
+  # -----------------------------
+  # DEVCONTAINER
+  # -----------------------------
+  mkdir -p .devcontainer
+  cat << 'EOF' > .devcontainer/devcontainer.json
+{
+  "name": "Dev Container",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "features": {},
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-azuretools.vscode-docker",
+        "redhat.ansible",
+        "github.vscode-github-actions"
+      ]
+    }
+  }
+}
+EOF
+
+  # -----------------------------
+  # GITHUB WORKFLOW (SECRET-SAFE)
+  # -----------------------------
+  mkdir -p .github/workflows
+  cat << 'EOF' > .github/workflows/ci.yml
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run basic checks
+        run: echo "CI pipeline running. Secrets are never loaded."
+EOF
+
+  # -----------------------------
+  # HARDENED .gitignore
+  # -----------------------------
+  cat << 'EOF' > .gitignore
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+*.pyc
+build/
+dist/
+
+# Node
+node_modules/
+
+# Secrets
+.env
+.env.*
+*.key
+*.pem
+*.p12
+*.pfx
+*.crt
+*.secret
+*.secrets
+secrets.yml
+secrets.yaml
+vault-password.txt
+ansible-vault-pass
+config.local.*
+
+# SSH keys
+id_rsa
+id_rsa.pub
+id_ed25519
+id_ed25519.pub
+EOF
+
+  # -----------------------------
+  # .env.example (safe template)
+  # -----------------------------
+  cat << 'EOF' > .env.example
+# Copy to .env and fill in real values.
+# Real secrets should come from Bitwarden or environment variables.
+
+APP_ENV=development
+APP_DEBUG=true
+
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=example_db
+DB_USER=example_user
+DB_PASSWORD=<set via Bitwarden>
+
+API_KEY=<set via Bitwarden>
+EOF
+
+  # -----------------------------
+  # ANSIBLE SCAFFOLDING
+  # -----------------------------
+  mkdir -p ansible/group_vars ansible/host_vars ansible/roles
+
+  cat << 'EOF' > ansible/README.md
+# Ansible Directory
+
+- Store playbooks, roles, inventories here.
+- Sensitive vars should be encrypted using Ansible Vault.
+- Do NOT commit plaintext secrets.
+
+Example:
+  ansible-vault create group_vars/all/vault.yml
+
+Recommended:
+  Store real secrets in Bitwarden and generate vault files from them.
+EOF
+
+  # -----------------------------
+  # PRE-COMMIT CONFIG (detect-secrets + gitleaks)
+  # -----------------------------
+  cat << 'EOF' > .pre-commit-config.yaml
+repos:
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.4.0
+    hooks:
+      - id: detect-secrets
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.0
+    hooks:
+      - id: gitleaks
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: check-yaml
+      - id: check-json
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+
+  - repo: https://github.com/ansible/ansible-lint
+    rev: v24.2.0
+    hooks:
+      - id: ansible-lint
+EOF
+}
+
+# -----------------------------
+# CREATE PROJECT DIRECTORY
+# -----------------------------
+mkdir -p "$PROJECT_DIR"
+cd "$PROJECT_DIR"
+
+# -----------------------------
+# TEMPLATE DISPATCH
+# -----------------------------
+case "$PROJECT_TYPE" in
+  research)
+    echo "Creating research project..."
+    if [ -f "$PROJECTS_DIR/templates/research/template.sh" ]; then
+      source "$PROJECTS_DIR/templates/research/template.sh"
+      create_research_project "$PROJECT_DIR" "$PROJECT_NAME"
+
+      # Copy RESEARCH_GUIDE.md to project root
+      if [ -f "$PROJECTS_DIR/templates/research/RESEARCH_GUIDE.md" ]; then
+        cp "$PROJECTS_DIR/templates/research/RESEARCH_GUIDE.md" RESEARCH_GUIDE.md
+      fi
+    else
+      echo "Error: Research template not found at $PROJECTS_DIR/templates/research/template.sh"
+      exit 1
+    fi
+    ;;
+  default|*)
+    echo "Creating default project..."
+    create_default_project
+    ;;
+esac
+
+# -----------------------------
+# INITIALIZE GIT
+# -----------------------------
+git init -q
+git add .
+git commit -m "Initial project scaffold" -q
+
+# -----------------------------
+# CREATE GITHUB REPO
+# -----------------------------
+gh repo create "$GITHUB_USER/$PROJECT_NAME" --private --source=. --remote=origin --push
+
+# -----------------------------
+# INSTALL PRE-COMMIT
+# -----------------------------
+if command -v pre-commit >/dev/null 2>&1; then
+  pre-commit install
+fi
+
+# -----------------------------
+# OPEN IN VS CODE
+# -----------------------------
+if command -v code >/dev/null 2>&1; then
+  code .
+fi
+
+# -----------------------------
+# SUCCESS MESSAGE
+# -----------------------------
+echo ""
+if [ "$PROJECT_TYPE" = "research" ]; then
+  echo "Research project $PROJECT_NAME created successfully!"
+  echo "See RESEARCH_GUIDE.md for usage instructions."
 else
-  echo "GitHub repo exists. Setting remote and pushing..."
-  git remote add origin "git@github.com:$GITHUB_USER/$TARGET.git" 2>/dev/null || true
-  git branch -M main 2>/dev/null || true
-  git push -u origin main || true
+  echo "To start Claude in this project:"
+  echo "  cd \"$PROJECT_DIR\" && claude \"$PROJECT_DIR\""
 fi
+
+echo ""
+echo "Project $PROJECT_NAME created at $PROJECT_DIR and pushed to GitHub."

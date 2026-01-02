@@ -18,12 +18,39 @@ Designed for reproducibility, portability, and frictionless onboarding.
 This repository provides:
 
 - Universal project automation scripts (\`cproj\`, \`newproj\`)
+- Research project templates (\`--research\` flag support)
 - A full repository validator (\`validate_repo.sh\`)
 - A structured documentation system (\`docs/\`)
 - Windows onboarding options (\`Windows/\`)
 - A clean, portable installation workflow
 
 Everything is designed to avoid hard‑coded usernames, paths, or environment assumptions.
+
+## Project Types
+
+### Default Projects (Development)
+```bash
+cproj MyDevProject
+```
+Creates projects with:
+- Ansible scaffolding
+- DevContainer configuration
+- GitHub Actions CI/CD
+- Pre-commit hooks (secret detection)
+- Environment variable templates
+
+### Research Projects (NEW)
+```bash
+cproj MyResearch --research
+```
+Creates documentation-focused projects with:
+- `research/` - Notes, findings, comparisons, recommendations, sources
+- `reports/` - Executive summaries and final reports
+- `data/` - Data files for quantitative research
+- `assets/` - Images, diagrams, screenshots
+- 22+ markdown templates with comprehensive guides
+
+**Use cases**: Product comparisons, technical investigations, market research, academic research
 
 ---
 
