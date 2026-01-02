@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+GITHUB_USER="$(gh api user --jq '.login')"
+PROJECTS_DIR="$HOME/dev/projects"
+
+if [ $# -lt 1 ]; then
+  echo "Usage: newproj <project-name>"
+  exit 1
+fi
+
+TARGET="$1"
+TARGET_DIR="$PROJECTS_DIR/$TARGET"
+
+mkdir -p "$TARGET_DIR"
+cd "$TARGET_DIR"
+
+if [ ! -d ".git" ]; then
+  git init
+fi
+
+if [ ! -f "README.md" ]; then
+  echo "# $TARGET" > README.md
+  git add README.md
+  git commit -m "Initial commit" || true
+fi
+
+if ! gh repo view "$GITHUB_USER/$TARGET" >/dev/null 2>&1; then
+  echo "Creating GitHub repo $GITHUB_USER/$TARGET..."
+  gh repo create "$GITHUB_USER/$TARGET" --source=. --public --push
+else
+  echo "GitHub repo exists. Setting remote and pushing..."
+  git remote add origin "git@github.com:$GITHUB_USER/$TARGET.git" 2>/dev/null || true
+  git branch -M main 2>/dev/null || true
+  git push -u origin main || true
+fi

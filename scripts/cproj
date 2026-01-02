@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+GITHUB_USER="$(gh api user --jq '.login')"
+PROJECTS_DIR="$HOME/dev/projects"
+
+if [[ "${1:-}" = "--delete" || "${2:-}" = "--delete" ]]; then
+  if [ "${1:-}" = "--delete" ]; then TARGET="${2:-}"; else TARGET="${1:-}"; fi
+  if [ -z "${TARGET:-}" ]; then echo "Usage: cproj --delete <project>"; exit 1; fi
+  TARGET_DIR="$PROJECTS_DIR/$TARGET"
+  echo "Deleting GitHub repo $GITHUB_USER/$TARGET and $TARGET_DIR"
+  gh repo delete "$GITHUB_USER/$TARGET" --yes || true
+  rm -rf "$TARGET_DIR" || true
+  exit 0
+fi
+
+if [ $# -lt 1 ]; then echo "Usage: cproj <project>"; exit 1; fi
+TARGET="$1"
+TARGET_DIR="$PROJECTS_DIR/$TARGET"
+
+if [ ! -d "$TARGET_DIR" ]; then
+  if gh repo view "$GITHUB_USER/$TARGET" >/dev/null 2>&1; then
+    gh repo clone "$GITHUB_USER/$TARGET" "$TARGET_DIR"
+  else
+    newproj "$TARGET"
+  fi
+fi
+
+cd "$TARGET_DIR"
+
+if [ -d ".git" ]; then
+  git fetch --quiet || true
+  if git diff --quiet && git diff --cached --quiet; then
+    STATUS=$(git status -uno || true)
+    if echo "$STATUS" | grep -q "behind"; then git pull --ff-only || true; fi
+  fi
+fi
+
+if command -v code >/dev/null 2>&1; then
+  if pgrep -x "code" >/dev/null 2>&1; then code --reuse-window "$TARGET_DIR"; else code "$TARGET_DIR"; fi
+fi
+
+if command -v pre-commit >/dev/null 2>&1 && [ -f ".pre-commit-config.yaml" ]; then
+  pre-commit run --all-files || true
+fi
+
+gh repo view "$GITHUB_USER/$TARGET" --web || true
+
+if command -v claude >/dev/null 2>&1; then claude "$TARGET_DIR"; fi
