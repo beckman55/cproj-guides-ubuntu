@@ -1,8 +1,42 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PROJECTS_DIR="$HOME/dev/projects"
-GITHUB_USER="beckman55"
+# -----------------------------
+# CONFIGURATION
+# -----------------------------
+CONFIG_FILE="$HOME/.cproj.conf"
+
+# Load or create config
+if [ -f "$CONFIG_FILE" ]; then
+  source "$CONFIG_FILE"
+else
+  echo "First-time setup: Where would you like to store your projects?"
+  echo "Default: $HOME/dev/projects"
+  read -p "Projects folder [press Enter for default]: " USER_PROJECTS_DIR
+
+  if [ -z "$USER_PROJECTS_DIR" ]; then
+    PROJECTS_DIR="$HOME/dev/projects"
+  else
+    PROJECTS_DIR="$USER_PROJECTS_DIR"
+  fi
+
+  # Get GitHub username
+  if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+    GITHUB_USER="$(gh api user --jq '.login')"
+  else
+    read -p "GitHub username: " GITHUB_USER
+  fi
+
+  # Save config
+  cat > "$CONFIG_FILE" << EOF
+PROJECTS_DIR="$PROJECTS_DIR"
+GITHUB_USER="$GITHUB_USER"
+EOF
+  echo "Config saved to $CONFIG_FILE"
+fi
+
+# Ensure PROJECTS_DIR exists
+mkdir -p "$PROJECTS_DIR"
 
 # -----------------------------
 # DELETE MODE (SUPPORTS BOTH ORDERS)
