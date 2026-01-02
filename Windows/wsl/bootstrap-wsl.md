@@ -12,7 +12,7 @@ wsl --install
 wsl sudo apt update && sudo apt install -y git gh
 wsl gh auth login
 wsl mkdir -p "$HOME/dev/projects"
-wsl git clone https://github.com/beckman55/cproj-guides-ubuntu.git "$HOME/dev/projects/cproj-guides-ubuntu"
+wsl git clone https://github.com/<your-username>/cproj-guides-ubuntu.git "$HOME/dev/projects/cproj-guides-ubuntu"
 wsl bash "$HOME/dev/projects/cproj-guides-ubuntu/install.sh"
 wsl bash "$HOME/dev/projects/cproj-guides-ubuntu/validate_repo.sh"
 ```

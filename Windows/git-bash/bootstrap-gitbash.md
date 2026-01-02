@@ -13,7 +13,7 @@ Open **Git Bash** and run:
 ```bash
 mkdir -p "$HOME/dev/projects" && \
 cd "$HOME/dev/projects" && \
-git clone https://github.com/beckman55/cproj-guides-ubuntu.git && \
+git clone https://github.com/<your-username>/cproj-guides-ubuntu.git && \
 cd cproj-guides-ubuntu && \
 ./install.sh && \
 ./validate_repo.sh

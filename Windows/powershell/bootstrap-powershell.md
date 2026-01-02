@@ -13,7 +13,7 @@ $projRoot = "$env:USERPROFILE\dev\projects"
 New-Item -ItemType Directory -Force -Path $projRoot | Out-Null
 Set-Location $projRoot
 
-git clone https://github.com/beckman55/cproj-guides-ubuntu.git
+git clone https://github.com/<your-username>/cproj-guides-ubuntu.git
 Set-Location cproj-guides-ubuntu
 
 bash install.sh
