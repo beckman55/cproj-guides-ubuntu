@@ -8,11 +8,12 @@ CONFIG_FILE="$HOME/.cproj.conf"
 
 # Load or create config
 if [ -f "$CONFIG_FILE" ]; then
+  # shellcheck source=/dev/null
   source "$CONFIG_FILE"
 else
   echo "First-time setup: Where would you like to store your projects?"
   echo "Default: $HOME/dev/projects"
-  read -p "Projects folder [press Enter for default]: " USER_PROJECTS_DIR
+  read -rp "Projects folder [press Enter for default]: " USER_PROJECTS_DIR
 
   if [ -z "$USER_PROJECTS_DIR" ]; then
     PROJECTS_DIR="$HOME/dev/projects"
@@ -24,7 +25,7 @@ else
   if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
     GITHUB_USER="$(gh api user --jq '.login')"
   else
-    read -p "GitHub username: " GITHUB_USER
+    read -rp "GitHub username: " GITHUB_USER
   fi
 
   # Save config
@@ -63,7 +64,7 @@ if [ "$1" = "--delete" ]; then
   echo "  GitHub repo: $GITHUB_USER/$DELETE_NAME"
   echo "  Local folder: $DELETE_DIR"
   echo ""
-  read -p "Are you sure you want to continue? (y/N) " CONFIRM
+  read -rp "Are you sure you want to continue? (y/N) " CONFIRM
 
   if [[ "$CONFIRM" != "y" && "$CONFIRM" != "Y" ]]; then
     echo "Deletion cancelled."
@@ -281,14 +282,16 @@ cd "$PROJECT_DIR"
 case "$PROJECT_TYPE" in
   research)
     echo "Creating research project..."
-    if [ -f "$PROJECTS_DIR/templates/research/template.sh" ]; then
-      source "$PROJECTS_DIR/templates/research/template.sh"
+    TEMPLATE_FILE="$PROJECTS_DIR/templates/research/template.sh"
+    if [ -f "$TEMPLATE_FILE" ]; then
+      # shellcheck source=/dev/null
+      source "$TEMPLATE_FILE"
       create_research_project "$PROJECT_DIR" "$PROJECT_NAME"
       if [ -f "$PROJECTS_DIR/templates/research/RESEARCH_GUIDE.md" ]; then
         cp "$PROJECTS_DIR/templates/research/RESEARCH_GUIDE.md" RESEARCH_GUIDE.md
       fi
     else
-      echo "Error: Research template not found at $PROJECTS_DIR/templates/research/template.sh"
+      echo "Error: Research template not found at $TEMPLATE_FILE"
       exit 1
     fi
     ;;
